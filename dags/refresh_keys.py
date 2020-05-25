@@ -4,9 +4,10 @@ from airflow.operators.bash_operator import BashOperator
 from datetime import datetime, timedelta
 from airflow.operators.python_operator import PythonOperator
 from pprint import pprint
-
-conn = BaseHook.get_connection('fitbit-connector')
-print(f"AIRFLOW_CONN_{conn.conn_id.upper()}='{conn.get_uri()}'")
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy import create_engine
+from sqlalchemy.sql import text
+from sqlalchemy.orm import Session
 
 default_args = {
     "owner": "airflow",
@@ -32,16 +33,24 @@ dag = DAG(
 
 
 # [START howto_operator_python]
-def print_context(ds, **kwargs):
-    print('hello world')
-    print(f"AIRFLOW_CONN_{conn.conn_id.upper()}='{conn.get_uri()}'")
-    # return 'Whatever you return gets printed in the logs'
-    return f"AIRFLOW_CONN_{conn.conn_id.upper()}='{conn.get_uri()}'"
+def connect_to_db(ds, **kwargs):
+    connection_string = BaseHook.get_connection('fitbit-connector').get_uri()
+
+    engine = create_engine(connection_string)
+    Base = automap_base()
+    Base.prepare(engine, reflect=True)
+    
+    Fitbit = Base.classes.fitbit
+    session = Session(engine)
+    user_ids = [user.fitbit_id for user in session.query(Fitbit).all()]
+    print(user_ids)
+
+    session.close()
 
 run_this = PythonOperator(
     task_id='print_the_context',
     provide_context=True,
-    python_callable=print_context,
+    python_callable=connect_to_db,
     dag=dag,
 )
 
